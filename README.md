@@ -90,7 +90,11 @@ The system demonstrates how architectural improvements combined with advanced op
 * PDF Report Generation
 * Doctor Login System
 * Patient Database & Analytics Dashboard
-
+* Login Credentials-> Username: doctor1
+                      Password: pass123
+* Login Credentials-> Username: admin
+                      Password: admin@123
+  
 ---
 
 ## ⚙️ Technologies Used
