@@ -1,3 +1,4 @@
+# ================== IMPORTS ==================
 import streamlit as st
 import torch
 import torch.nn as nn
@@ -6,28 +7,24 @@ from PIL import Image
 import numpy as np
 import cv2
 import os
-import csv
 from datetime import datetime
 from reportlab.lib.pagesizes import letter
 from reportlab.pdfgen import canvas
 import pandas as pd
 
+# 🔥 FIREBASE
+import firebase_admin
+from firebase_admin import credentials, firestore
+
+# ================== FIREBASE INIT ==================
+if not firebase_admin._apps:
+    cred = credentials.Certificate(st.secrets["firebase"])
+    firebase_admin.initialize_app(cred)
+
+db = firestore.client()
+
 # ================== CONFIG ==================
 st.set_page_config(page_title="AI Breast Cancer Detection", layout="wide")
-
-# ================== UI ==================
-st.markdown("""
-<style>
-body { background-color: #f5f7fb; }
-.card {
-    background: white;
-    padding: 20px;
-    border-radius: 15px;
-    box-shadow: 0 5px 20px rgba(0,0,0,0.1);
-    margin-top: 15px;
-}
-</style>
-""", unsafe_allow_html=True)
 
 # ================== HEADER ==================
 st.markdown("""
@@ -36,75 +33,43 @@ st.markdown("""
 <hr>
 """, unsafe_allow_html=True)
 
-# ================== USERS ==================
-USERS_FILE = "users.csv"
-
-if not os.path.exists(USERS_FILE) or os.stat(USERS_FILE).st_size == 0:
-    with open(USERS_FILE, "w", newline="") as f:
-        writer = csv.writer(f)
-        writer.writerow(["username", "password"])
-
-def load_users():
-    try:
-        df = pd.read_csv(USERS_FILE)
-        if "username" not in df.columns:
-            return pd.DataFrame(columns=["username", "password"])
-        return df
-    except:
-        return pd.DataFrame(columns=["username", "password"])
-
 # ================== SESSION ==================
 if "logged_in" not in st.session_state:
     st.session_state.logged_in = False
 
+# ================== AUTH ==================
 menu = st.selectbox("Select Option", ["Login", "Signup"])
 
-# ================== AUTH ==================
 if not st.session_state.logged_in:
 
-    col1, col2 = st.columns([1,1])
+    if menu == "Signup":
+        st.subheader("Signup")
+        user = st.text_input("Username")
+        pwd = st.text_input("Password", type="password")
 
-    with col1:
-        st.image("https://img.icons8.com/color/512/doctor-male.png")
+        if st.button("Create Account"):
+            db.collection("users").add({
+                "username": user,
+                "password": pwd
+            })
+            st.success("Account Created ✅")
 
-    with col2:
-        if menu == "Signup":
-            st.subheader("📝 Create Account")
+    if menu == "Login":
+        st.subheader("Login")
+        user = st.text_input("Username")
+        pwd = st.text_input("Password", type="password")
 
-            new_user = st.text_input("Username")
-            new_pass = st.text_input("Password", type="password")
+        if st.button("Login"):
+            users = db.collection("users").stream()
 
-            if st.button("Signup"):
-                df = load_users()
+            for u in users:
+                data = u.to_dict()
+                if data["username"] == user and data["password"] == pwd:
+                    st.session_state.logged_in = True
+                    st.session_state.user = user
+                    st.rerun()
 
-                if new_user in df["username"].values:
-                    st.error("User already exists ❌")
-                else:
-                    with open(USERS_FILE, "a", newline="") as f:
-                        writer = csv.writer(f)
-                        writer.writerow([new_user, new_pass])
-
-                    st.success("Account created successfully ✅")
-
-        elif menu == "Login":
-            st.subheader("🔐 Login")
-
-            username = st.text_input("Username").strip()
-            password = st.text_input("Password", type="password").strip()
-
-            if st.button("Login"):
-                df = load_users()
-                user_row = df[df["username"] == username]
-
-                if not user_row.empty:
-                    if user_row.iloc[0]["password"] == password:
-                        st.session_state.logged_in = True
-                        st.session_state.user = username
-                        st.rerun()
-                    else:
-                        st.error("Wrong password ❌")
-                else:
-                    st.error("User not found ❌")
+            st.error("Invalid credentials ❌")
 
     st.stop()
 
@@ -112,12 +77,8 @@ if not st.session_state.logged_in:
 st.sidebar.markdown("## 🏥 AI Panel")
 st.sidebar.info(f"👤 {st.session_state.user}")
 
-st.sidebar.markdown("---")
-
-# 🔥 LOGOUT
-if st.sidebar.button("🚪 Logout"):
+if st.sidebar.button("Logout"):
     st.session_state.logged_in = False
-    st.session_state.user = None
     st.rerun()
 
 page = st.sidebar.radio("Navigate", [
@@ -131,147 +92,90 @@ device = torch.device("cpu")
 
 @st.cache_resource
 def load_model():
-    weights = EfficientNet_B2_Weights.DEFAULT
-    model = efficientnet_b2(weights=weights)
-
-    model.classifier[1] = nn.Sequential(
-        nn.Dropout(0.5),
-        nn.Linear(model.classifier[1].in_features, 2)
-    )
-
+    model = efficientnet_b2(weights=EfficientNet_B2_Weights.DEFAULT)
+    model.classifier[1] = nn.Linear(model.classifier[1].in_features, 2)
     model.load_state_dict(torch.load("efficientnet_final_best.pth", map_location=device))
     model.eval()
     return model
 
 model = load_model()
-
-weights = EfficientNet_B2_Weights.DEFAULT
-preprocess = weights.transforms()
+preprocess = EfficientNet_B2_Weights.DEFAULT.transforms()
 class_names = ["Benign", "Malignant"]
-
-# ================= HISTORY =================
-HISTORY_FILE = "patient_history.csv"
-
-if not os.path.exists(HISTORY_FILE):
-    with open(HISTORY_FILE, 'w', newline='') as f:
-        writer = csv.writer(f)
-        writer.writerow(["Timestamp", "Image", "Prediction", "Confidence"])
 
 # ================= PDF =================
 def generate_pdf(filename, prediction, confidence):
-    pdf_path = f"report_{filename}.pdf"
-    c = canvas.Canvas(pdf_path, pagesize=letter)
-
+    path = f"report_{filename}.pdf"
+    c = canvas.Canvas(path, pagesize=letter)
     c.drawString(100, 750, "Breast Cancer Report")
-    c.drawString(100, 700, f"Image: {filename}")
-    c.drawString(100, 670, f"Prediction: {prediction}")
-    c.drawString(100, 640, f"Confidence: {confidence:.2f}%")
-
+    c.drawString(100, 700, f"Prediction: {prediction}")
+    c.drawString(100, 670, f"Confidence: {confidence:.2f}%")
     c.save()
-    return pdf_path
-
-# ================= GRADCAM =================
-def generate_gradcam(model, image_tensor):
-    gradients, activations = [], []
-
-    def forward_hook(module, input, output):
-        activations.append(output)
-
-    def backward_hook(module, grad_in, grad_out):
-        gradients.append(grad_out[0])
-
-    layer = model.features[-1]
-    f = layer.register_forward_hook(forward_hook)
-    b = layer.register_full_backward_hook(backward_hook)
-
-    output = model(image_tensor)
-    loss = output[0].max()
-
-    model.zero_grad()
-    loss.backward()
-
-    grads = gradients[0]
-    acts = activations[0]
-
-    weights = torch.mean(grads, dim=(2, 3), keepdim=True)
-    cam = torch.sum(weights * acts, dim=1).squeeze()
-
-    cam = torch.relu(cam)
-    cam -= cam.min()
-    cam /= cam.max()
-
-    f.remove()
-    b.remove()
-
-    return cv2.resize(cam.detach().numpy(), (512, 512))
+    return path
 
 # ================= DIAGNOSIS =================
 if page == "Diagnosis Panel":
-    st.subheader("🧬 AI Diagnosis Panel")
 
-    uploaded_files = st.file_uploader("Upload Images", type=["jpg", "png", "jpeg"], accept_multiple_files=True)
+    uploaded_files = st.file_uploader("Upload Images", type=["jpg","png"], accept_multiple_files=True)
 
     if uploaded_files:
-        for uploaded_file in uploaded_files:
-            image = Image.open(uploaded_file).convert("RGB")
+        for file in uploaded_files:
+            image = Image.open(file).convert("RGB")
+            st.image(image)
 
-            st.image(image, use_column_width=True)
+            tensor = preprocess(image).unsqueeze(0)
 
-            img_tensor = preprocess(image).unsqueeze(0)
+            with torch.no_grad():
+                out = model(tensor)
+                prob = torch.softmax(out, dim=1)
+                conf, pred = torch.max(prob,1)
 
-            with st.spinner("Analyzing image..."):
-                with torch.no_grad():
-                    outputs = model(img_tensor)
-                    probs = torch.softmax(outputs, dim=1)
-                    confidence, predicted = torch.max(probs, 1)
+            label = class_names[pred.item()]
+            conf = conf.item()*100
 
-            label = class_names[predicted.item()]
-            conf = confidence.item() * 100
+            st.success(f"{label} ({conf:.2f}%)")
 
-            color = "#ff4b4b" if label == "Malignant" else "#2ecc71"
+            # 🔥 SAVE TO FIREBASE
+            db.collection("patients").add({
+                "timestamp": str(datetime.now()),
+                "image": file.name,
+                "prediction": label,
+                "confidence": conf,
+                "user": st.session_state.user
+            })
 
-            st.markdown(f"""
-            <div class="card">
-            <h3>🧠 AI Diagnosis</h3>
-            <p><b>Status:</b> <span style="color:{color};">{label}</span></p>
-            <p><b>Confidence:</b> {conf:.2f}%</p>
-            </div>
-            """, unsafe_allow_html=True)
+            st.success("Saved to database ✅")
 
-            st.progress(int(conf))
-
-            cam = generate_gradcam(model, img_tensor)
-            original = np.array(image.resize((512, 512)))
-            heatmap = cv2.applyColorMap(np.uint8(255 * cam), cv2.COLORMAP_JET)
-            overlay = cv2.addWeighted(original, 0.6, heatmap, 0.4, 0)
-
-            col1, col2 = st.columns(2)
-            with col1:
-                st.image(original, caption="Original")
-            with col2:
-                st.image(overlay, caption="AI Focus")
-
-            pdf = generate_pdf(uploaded_file.name, label, conf)
+            pdf = generate_pdf(file.name, label, conf)
 
             with open(pdf, "rb") as f:
-                st.download_button("📄 Download Report", f, file_name=pdf)
+                st.download_button("Download Report", f, file_name=pdf)
 
 # ================= DATABASE =================
 if page == "Patient Database":
-    st.subheader("📂 Patient Records")
 
-    if os.path.exists(HISTORY_FILE):
-        df = pd.read_csv(HISTORY_FILE)
-        st.dataframe(df, use_container_width=True)
+    docs = db.collection("patients").stream()
+
+    data = []
+    for d in docs:
+        data.append(d.to_dict())
+
+    if data:
+        df = pd.DataFrame(data)
+        st.dataframe(df)
+    else:
+        st.warning("No data yet")
 
 # ================= DASHBOARD =================
 if page == "Analytics Dashboard":
-    st.subheader("📊 Analytics Dashboard")
 
-    if os.path.exists(HISTORY_FILE):
-        df = pd.read_csv(HISTORY_FILE)
+    docs = db.collection("patients").stream()
 
-        if not df.empty:
-            st.bar_chart(df["Prediction"].value_counts())
-            st.bar_chart(df.groupby("Prediction")["Confidence"].mean())
-            st.metric("Total Cases", len(df))
+    data = []
+    for d in docs:
+        data.append(d.to_dict())
+
+    if data:
+        df = pd.DataFrame(data)
+
+        st.bar_chart(df["prediction"].value_counts())
+        st.metric("Total Cases", len(df))
