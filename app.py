@@ -43,14 +43,21 @@ if "logged_in" not in st.session_state:
 
 if not st.session_state.logged_in:
 
-    col1, col2 = st.columns(2)
+    st.markdown("## 🔐 Access Portal")
 
-    # 🔐 LOGIN
-    with col1:
-        st.subheader("🔐 Login")
+    # 🔥 Toggle Button (Radio style tabs)
+    auth_mode = st.radio(
+        "",
+        ["Login", "Signup"],
+        horizontal=True
+    )
 
-        login_user = st.text_input("Username", key="login_user")
-        login_pwd = st.text_input("Password", type="password", key="login_pwd")
+    # ================= LOGIN =================
+    if auth_mode == "Login":
+        st.subheader("Login")
+
+        login_user = st.text_input("Username")
+        login_pwd = st.text_input("Password", type="password")
 
         if st.button("Login"):
             users = db.collection("users").stream()
@@ -64,14 +71,14 @@ if not st.session_state.logged_in:
 
             st.error("Invalid credentials ❌")
 
-    # 🆕 SIGNUP
-    with col2:
-        st.subheader("🆕 Signup")
+    # ================= SIGNUP =================
+    else:
+        st.subheader("Create Account")
 
-        signup_user = st.text_input("New Username", key="signup_user")
-        signup_pwd = st.text_input("New Password", type="password", key="signup_pwd")
+        signup_user = st.text_input("Username")
+        signup_pwd = st.text_input("Password", type="password")
 
-        if st.button("Create Account"):
+        if st.button("Signup"):
             if signup_user and signup_pwd:
                 db.collection("users").add({
                     "username": signup_user,
