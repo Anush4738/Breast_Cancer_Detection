@@ -40,38 +40,46 @@ if "logged_in" not in st.session_state:
     st.session_state.logged_in = False
 
 # ================== AUTH ==================
-menu = st.selectbox("Select Option", ["Login", "Signup"])
 
 if not st.session_state.logged_in:
 
-    if menu == "Signup":
-        st.subheader("Signup")
-        user = st.text_input("Username")
-        pwd = st.text_input("Password", type="password")
+    col1, col2 = st.columns(2)
 
-        if st.button("Create Account"):
-            db.collection("users").add({
-                "username": user,
-                "password": pwd
-            })
-            st.success("Account Created ✅")
+    # 🔐 LOGIN
+    with col1:
+        st.subheader("🔐 Login")
 
-    if menu == "Login":
-        st.subheader("Login")
-        user = st.text_input("Username")
-        pwd = st.text_input("Password", type="password")
+        login_user = st.text_input("Username", key="login_user")
+        login_pwd = st.text_input("Password", type="password", key="login_pwd")
 
         if st.button("Login"):
             users = db.collection("users").stream()
 
             for u in users:
                 data = u.to_dict()
-                if data["username"] == user and data["password"] == pwd:
+                if data["username"] == login_user and data["password"] == login_pwd:
                     st.session_state.logged_in = True
-                    st.session_state.user = user
+                    st.session_state.user = login_user
                     st.rerun()
 
             st.error("Invalid credentials ❌")
+
+    # 🆕 SIGNUP
+    with col2:
+        st.subheader("🆕 Signup")
+
+        signup_user = st.text_input("New Username", key="signup_user")
+        signup_pwd = st.text_input("New Password", type="password", key="signup_pwd")
+
+        if st.button("Create Account"):
+            if signup_user and signup_pwd:
+                db.collection("users").add({
+                    "username": signup_user,
+                    "password": signup_pwd
+                })
+                st.success("Account Created ✅")
+            else:
+                st.warning("Enter all details")
 
     st.stop()
 
