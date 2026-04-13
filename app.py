@@ -7,8 +7,8 @@ from PIL import Image
 import numpy as np
 import cv2
 from datetime import datetime
-from reportlab.lib.pagesizes import letter
-from reportlab.pdfgen import canvas
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
+from reportlab.lib.styles import getSampleStyleSheet
 import pandas as pd
 
 # 🔥 FIREBASE
@@ -149,22 +149,44 @@ def generate_gradcam(model, image_tensor):
     return cv2.resize(cam.detach().numpy(), (512, 512))
 
 # ================= PDF =================
-def generate_pdf(filename, prediction, confidence):
-    path = f"report_{filename}.pdf"
-    c = canvas.Canvas(path, pagesize=letter)
-    c.drawString(100, 750, "Breast Cancer Report")
-    c.drawString(100, 700, f"Prediction: {prediction}")
-    c.drawString(100, 670, f"Confidence: {confidence:.2f}%")
-    c.save()
+def generate_pdf(patient_name, age, gender, prediction, confidence):
+    path = f"{patient_name}_report.pdf"
+    doc = SimpleDocTemplate(path)
+    styles = getSampleStyleSheet()
+
+    content = []
+    content.append(Paragraph("<b>Breast Cancer Report</b>", styles["Title"]))
+    content.append(Spacer(1, 20))
+
+    content.append(Paragraph(f"<b>Patient Name:</b> {patient_name}", styles["Normal"]))
+    content.append(Paragraph(f"<b>Age:</b> {age}", styles["Normal"]))
+    content.append(Paragraph(f"<b>Gender:</b> {gender}", styles["Normal"]))
+    content.append(Spacer(1, 20))
+
+    content.append(Paragraph(f"<b>Prediction:</b> {prediction}", styles["Normal"]))
+    content.append(Paragraph(f"<b>Confidence:</b> {confidence:.2f}%", styles["Normal"]))
+
+    doc.build(content)
     return path
 
 # ================= DIAGNOSIS =================
 if page == "Diagnosis Panel":
 
+    st.subheader("🧑 Patient Details")
+
+    patient_name = st.text_input("Patient Name")
+    patient_age = st.number_input("Age", 0, 120)
+    patient_gender = st.selectbox("Gender", ["Male", "Female", "Other"])
+
     uploaded_files = st.file_uploader("Upload Images", type=["jpg","png"], accept_multiple_files=True)
 
     if uploaded_files:
         for file in uploaded_files:
+
+            if not patient_name:
+                st.warning("Enter patient name first ⚠️")
+                st.stop()
+
             image = Image.open(file).convert("RGB")
             st.image(image)
 
@@ -180,30 +202,31 @@ if page == "Diagnosis Panel":
 
             st.success(f"{label} ({conf:.2f}%)")
 
-            # 🔥 GRADCAM
+            # GradCAM
             cam = generate_gradcam(model, tensor)
             original = np.array(image.resize((512, 512)))
             heatmap = cv2.applyColorMap(np.uint8(255 * cam), cv2.COLORMAP_JET)
             overlay = cv2.addWeighted(original, 0.6, heatmap, 0.4, 0)
 
             col1, col2 = st.columns(2)
-            with col1:
-                st.image(original, caption="Original")
-            with col2:
-                st.image(overlay, caption="AI Focus (Grad-CAM)")
+            col1.image(original, caption="Original")
+            col2.image(overlay, caption="Grad-CAM")
 
-            # 🔥 SAVE TO FIREBASE
+            # Save to Firebase
             db.collection("patients").add({
-                "timestamp": str(datetime.now()),
-                "image": file.name,
+                "patient_name": patient_name,
+                "age": patient_age,
+                "gender": patient_gender,
                 "prediction": label,
                 "confidence": conf,
-                "user": st.session_state.user
+                "image": file.name,
+                "user": st.session_state.user,
+                "timestamp": str(datetime.now())
             })
 
             st.success("Saved to database ✅")
 
-            pdf = generate_pdf(file.name, label, conf)
+            pdf = generate_pdf(patient_name, patient_age, patient_gender, label, conf)
 
             with open(pdf, "rb") as f:
                 st.download_button("Download Report", f, file_name=pdf)
@@ -213,13 +236,20 @@ if page == "Patient Database":
 
     docs = db.collection("patients").stream()
 
-    data = []
-    for d in docs:
-        data.append(d.to_dict())
+    data = [d.to_dict() for d in docs]
 
     if data:
         df = pd.DataFrame(data)
-        st.dataframe(df)
+
+        st.dataframe(df[[
+            "patient_name",
+            "age",
+            "gender",
+            "prediction",
+            "confidence",
+            "user",
+            "timestamp"
+        ]])
     else:
         st.warning("No data yet")
 
@@ -227,10 +257,7 @@ if page == "Patient Database":
 if page == "Analytics Dashboard":
 
     docs = db.collection("patients").stream()
-
-    data = []
-    for d in docs:
-        data.append(d.to_dict())
+    data = [d.to_dict() for d in docs]
 
     if data:
         df = pd.DataFrame(data)
