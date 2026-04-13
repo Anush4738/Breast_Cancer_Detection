@@ -38,7 +38,10 @@ if not st.session_state.logged_in:
         new_pass = st.text_input("Create Password", type="password")
 
         if st.button("Signup"):
-            df = pd.read_csv(USERS_FILE)
+            try:
+                df = pd.read_csv(USERS_FILE)
+            except pd.errors.EmptyDataError:
+                df = pd.DataFrame(columns=["username", "password"])
 
             if new_user in df["username"].values:
                 st.error("User already exists ❌")
@@ -56,7 +59,10 @@ if not st.session_state.logged_in:
         password = st.text_input("Password", type="password").strip()
 
         if st.button("Login"):
-            df = pd.read_csv(USERS_FILE)
+            try:
+                df = pd.read_csv(USERS_FILE)
+            except pd.errors.EmptyDataError:
+                df = pd.DataFrame(columns=["username", "password"])
 
             user_row = df[df["username"] == username]
 
