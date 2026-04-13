@@ -10,7 +10,7 @@ MobileNetV2 vs EfficientNet-B2 with Advanced Optimization Techniques
 ## 🌐 Live Web App
 
 👉 **Try the deployed application here:**  
-🔗 https://breastcancerdetection-b6ejkc7irq3cnzbcjt837g.streamlit.app
+🔗 [https://breastcancerdetection-b6ejkc7irq3cnzbcjt837g.streamlit.app](https://breastcancerdetection-mrbbtpzpu6g5xtd4dpqyql.streamlit.app/)
 
 > ⚠️ Note: You can create a new account using Signup and then Login to use the system.
 
