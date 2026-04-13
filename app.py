@@ -98,8 +98,15 @@ device = torch.device("cpu")
 @st.cache_resource
 def load_model():
     model = efficientnet_b2(weights=EfficientNet_B2_Weights.DEFAULT)
-    model.classifier[1] = nn.Linear(model.classifier[1].in_features, 2)
-    model.load_state_dict(torch.load("efficientnet_final_best.pth", map_location=device))
+
+    model.classifier[1] = nn.Sequential(
+        nn.Dropout(0.5),
+        nn.Linear(model.classifier[1].in_features, 2)
+    )
+
+    state_dict = torch.load("efficientnet_final_best.pth", map_location=device)
+    model.load_state_dict(state_dict, strict=False)
+
     model.eval()
     return model
 
