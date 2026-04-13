@@ -6,7 +6,6 @@ from torchvision.models import efficientnet_b2, EfficientNet_B2_Weights
 from PIL import Image
 import numpy as np
 import cv2
-import os
 from datetime import datetime
 from reportlab.lib.pagesizes import letter
 from reportlab.pdfgen import canvas
@@ -19,8 +18,6 @@ from firebase_admin import credentials, firestore
 # ================== FIREBASE INIT ==================
 if not firebase_admin._apps:
     firebase_dict = dict(st.secrets["firebase"])
-
-    # 🔥 FIX PRIVATE KEY ISSUE
     firebase_dict["private_key"] = firebase_dict["private_key"].replace("\\n", "\n")
 
     cred = credentials.Certificate(firebase_dict)
@@ -114,6 +111,43 @@ model = load_model()
 preprocess = EfficientNet_B2_Weights.DEFAULT.transforms()
 class_names = ["Benign", "Malignant"]
 
+# ================= GRADCAM =================
+def generate_gradcam(model, image_tensor):
+    gradients = []
+    activations = []
+
+    def forward_hook(module, input, output):
+        activations.append(output)
+
+    def backward_hook(module, grad_in, grad_out):
+        gradients.append(grad_out[0])
+
+    target_layer = model.features[-1]
+
+    fwd = target_layer.register_forward_hook(forward_hook)
+    bwd = target_layer.register_full_backward_hook(backward_hook)
+
+    output = model(image_tensor)
+    loss = output[0].max()
+
+    model.zero_grad()
+    loss.backward()
+
+    grads = gradients[0]
+    acts = activations[0]
+
+    weights = torch.mean(grads, dim=(2, 3), keepdim=True)
+    cam = torch.sum(weights * acts, dim=1).squeeze()
+
+    cam = torch.relu(cam)
+    cam -= cam.min()
+    cam /= cam.max()
+
+    fwd.remove()
+    bwd.remove()
+
+    return cv2.resize(cam.detach().numpy(), (512, 512))
+
 # ================= PDF =================
 def generate_pdf(filename, prediction, confidence):
     path = f"report_{filename}.pdf"
@@ -145,6 +179,18 @@ if page == "Diagnosis Panel":
             conf = conf.item()*100
 
             st.success(f"{label} ({conf:.2f}%)")
+
+            # 🔥 GRADCAM
+            cam = generate_gradcam(model, tensor)
+            original = np.array(image.resize((512, 512)))
+            heatmap = cv2.applyColorMap(np.uint8(255 * cam), cv2.COLORMAP_JET)
+            overlay = cv2.addWeighted(original, 0.6, heatmap, 0.4, 0)
+
+            col1, col2 = st.columns(2)
+            with col1:
+                st.image(original, caption="Original")
+            with col2:
+                st.image(overlay, caption="AI Focus (Grad-CAM)")
 
             # 🔥 SAVE TO FIREBASE
             db.collection("patients").add({
