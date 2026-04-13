@@ -1,6 +1,6 @@
-streamlit
-torch==2.0.1
-torchvision==0.15.2
+streamlit==1.56.0
+torch==2.6.0
+torchvision==0.21.0
 numpy
 pandas
 opencv-python-headless
