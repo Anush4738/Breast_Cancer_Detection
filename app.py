@@ -15,20 +15,32 @@ import pandas as pd
 # ================== CONFIG ==================
 st.set_page_config(page_title="Hospital AI Panel", layout="wide")
 
-# ================== SIGNUP + LOGIN SYSTEM ==================
+# ================== USERS FILE ==================
 USERS_FILE = "users.csv"
 
-# create file if not exists
-if not os.path.exists(USERS_FILE):
+# ensure file exists with correct header
+if not os.path.exists(USERS_FILE) or os.stat(USERS_FILE).st_size == 0:
     with open(USERS_FILE, "w", newline="") as f:
         writer = csv.writer(f)
         writer.writerow(["username", "password"])
 
+# safe load function
+def load_users():
+    try:
+        df = pd.read_csv(USERS_FILE)
+        if "username" not in df.columns or "password" not in df.columns:
+            return pd.DataFrame(columns=["username", "password"])
+        return df
+    except:
+        return pd.DataFrame(columns=["username", "password"])
+
+# ================== SESSION ==================
 if "logged_in" not in st.session_state:
     st.session_state.logged_in = False
 
 menu = st.selectbox("Select Option", ["Login", "Signup"])
 
+# ================== AUTH ==================
 if not st.session_state.logged_in:
 
     if menu == "Signup":
@@ -38,10 +50,7 @@ if not st.session_state.logged_in:
         new_pass = st.text_input("Create Password", type="password")
 
         if st.button("Signup"):
-            try:
-                df = pd.read_csv(USERS_FILE)
-            except pd.errors.EmptyDataError:
-                df = pd.DataFrame(columns=["username", "password"])
+            df = load_users()
 
             if new_user in df["username"].values:
                 st.error("User already exists ❌")
@@ -59,10 +68,7 @@ if not st.session_state.logged_in:
         password = st.text_input("Password", type="password").strip()
 
         if st.button("Login"):
-            try:
-                df = pd.read_csv(USERS_FILE)
-            except pd.errors.EmptyDataError:
-                df = pd.DataFrame(columns=["username", "password"])
+            df = load_users()
 
             user_row = df[df["username"] == username]
 
