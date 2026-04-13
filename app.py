@@ -18,7 +18,12 @@ from firebase_admin import credentials, firestore
 
 # ================== FIREBASE INIT ==================
 if not firebase_admin._apps:
-    cred = credentials.Certificate(st.secrets["firebase"])
+    firebase_dict = dict(st.secrets["firebase"])
+
+    # 🔥 FIX PRIVATE KEY ISSUE
+    firebase_dict["private_key"] = firebase_dict["private_key"].replace("\\n", "\n")
+
+    cred = credentials.Certificate(firebase_dict)
     firebase_admin.initialize_app(cred)
 
 db = firestore.client()
