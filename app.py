@@ -15,33 +15,67 @@ import pandas as pd
 # ================== CONFIG ==================
 st.set_page_config(page_title="Hospital AI Panel", layout="wide")
 
-# ================== AUTH ==================
-USERS = {
-    "doctor1": "pass123",
-    "admin": "admin@123"
-}
+# ================== SIGNUP + LOGIN SYSTEM ==================
+USERS_FILE = "users.csv"
+
+# create file if not exists
+if not os.path.exists(USERS_FILE):
+    with open(USERS_FILE, "w", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow(["username", "password"])
 
 if "logged_in" not in st.session_state:
     st.session_state.logged_in = False
 
-if not st.session_state.logged_in:
-    st.title("🔐 Doctor Login")
-    username = st.text_input("Username")
-    password = st.text_input("Password", type="password")
+menu = st.selectbox("Select Option", ["Login", "Signup"])
 
-    if st.button("Login"):
-        if username in USERS and USERS[username] == password:
-            st.session_state.logged_in = True
-            st.session_state.user = username
-            st.success("Login successful ✅")
-            st.rerun()
-        else:
-            st.error("Invalid credentials ❌")
+if not st.session_state.logged_in:
+
+    if menu == "Signup":
+        st.title("📝 Signup")
+
+        new_user = st.text_input("Create Username")
+        new_pass = st.text_input("Create Password", type="password")
+
+        if st.button("Signup"):
+            df = pd.read_csv(USERS_FILE)
+
+            if new_user in df["username"].values:
+                st.error("User already exists ❌")
+            else:
+                with open(USERS_FILE, "a", newline="") as f:
+                    writer = csv.writer(f)
+                    writer.writerow([new_user, new_pass])
+
+                st.success("Account created successfully ✅")
+
+    elif menu == "Login":
+        st.title("🔐 Login")
+
+        username = st.text_input("Username").strip()
+        password = st.text_input("Password", type="password").strip()
+
+        if st.button("Login"):
+            df = pd.read_csv(USERS_FILE)
+
+            user_row = df[df["username"] == username]
+
+            if not user_row.empty:
+                if user_row.iloc[0]["password"] == password:
+                    st.session_state.logged_in = True
+                    st.session_state.user = username
+                    st.success("Login successful ✅")
+                    st.rerun()
+                else:
+                    st.error("Wrong password ❌")
+            else:
+                st.error("User not found ❌")
+
     st.stop()
 
 # ================== SIDEBAR ==================
 st.sidebar.title("🏥 Hospital AI Panel")
-st.sidebar.write(f"👤 Dr. {st.session_state.user}")
+st.sidebar.write(f"👤 {st.session_state.user}")
 
 page = st.sidebar.radio("Navigate", [
     "Diagnosis Panel",
@@ -159,7 +193,6 @@ if page == "Diagnosis Panel":
             conf = confidence.item() * 100
 
             st.success(f"{label} ({conf:.2f}%)")
-
             st.progress(int(conf))
 
             with open(HISTORY_FILE, 'a', newline='') as f:
